@@ -29,6 +29,10 @@ data/samples/*.png
 data/reference/*.txt
 !data/reference/.gitkeep
 
+# Android OCR raw text samples
+data/android_ocr/*.txt
+!data/android_ocr/.gitkeep
+
 # Local OCR engine / binary installations
 tesseract/
 Tesseract-OCR/

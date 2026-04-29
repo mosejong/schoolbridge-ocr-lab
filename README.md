@@ -525,6 +525,20 @@ python tools\run_quality_gate.py --result-json outputs\ocr_experiment\sample01\r
 python tools\run_quality_gate.py --result-json outputs\ocr_experiment\sample01\result.json --ground-truth data\reference\sample01_gt.txt --output outputs\ocr_experiment\sample01\quality_gate
 ```
 
+### Android ML Kit OCR Text Evaluation
+
+Android 앱 또는 ML Kit OCR에서 얻은 raw text 결과를 `.txt` 파일로 저장한 뒤, 같은 Quality Gate로 평가할 수 있습니다.
+
+```powershell
+python tools\run_quality_gate.py --text data\android_ocr\android_mlkit_113327.txt --output outputs\quality_gate\android_mlkit_113327
+```
+
+raw text 입력에는 OCR Lab의 table/cell 구조 정보가 없으므로 `table.score`는 `0.0`이고 `available=false`로 기록됩니다. 이 경우에는 `text_quality`와 핵심 패턴 점수를 중심으로 비교합니다.
+
+`quality_report.json`에는 `scoring_mode: raw_text`가 기록됩니다. raw text 모드의 `overall_score`는 table 점수를 제외하고 `text_quality`와 `pattern` 중심으로 계산합니다. 정상 URL/전화번호가 함께 추출된 경우, 일부 깨진 URL/전화번호 의심 후보는 자동 통과를 막는 hard reason이 아니라 점검용 warning으로만 남깁니다.
+
+Android OCR raw text는 실험 데이터이므로 GitHub에 포함하지 않습니다. `data/android_ocr/*.txt`는 `.gitignore` 대상입니다.
+
 출력 파일:
 
 ```text

@@ -79,11 +79,15 @@ def extract_key_patterns(text: str) -> dict[str, list[str]]:
     )
     dates = _unique(meal_dates + full_dates)
 
+    phones = _normalize_phone_values(
+        re.findall(r"(?<!\d)0\d{1,2}\s*[-\s]\s*\d{3,4}\s*[-\s]\s*\d{4}\b", text)
+    )
+
     return {
         "dates": dates,
         "times": _unique(re.findall(r"\b\d{1,2}\s*:\s*\d{2}(?:\s*[~-]\s*\d{1,2}\s*:\s*\d{2})?\b", text)),
         "amounts": _unique(re.findall(r"\b\d{1,3}(?:,\d{3})+\s*원\b|\b\d+\s*원\b", text)),
-        "phones": _unique(re.findall(r"\b0\d{1,2}[-\s]\d{3,4}[-\s]\d{4}\b", text)),
+        "phones": phones,
         "urls": _unique(
             re.findall(
                 r"(?:https?://)?(?:www\.)?[A-Za-z0-9][A-Za-z0-9.-]*\.(?:com|net|org|kr)(?:/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*)?",
@@ -325,6 +329,25 @@ def _unique(values: list[str]) -> list[str]:
             continue
         seen.add(normalized)
         result.append(normalized)
+    return result
+
+
+def _normalize_phone_values(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        digits = re.sub(r"\D", "", value)
+        if len(digits) == 10 and digits.startswith("02"):
+            normalized = f"{digits[:2]}-{digits[2:6]}-{digits[6:]}"
+        elif len(digits) == 10:
+            normalized = f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+        elif len(digits) == 11:
+            normalized = f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
+        else:
+            normalized = re.sub(r"\s+", "", value.strip())
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
     return result
 
 

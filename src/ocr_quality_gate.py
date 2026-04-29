@@ -210,11 +210,15 @@ def calculate_table_score(result_json: str | Path | dict[str, Any]) -> dict[str,
     }
 
 
-def decide_auto_pass(scores: dict[str, Any], threshold: float = AUTO_PASS_THRESHOLD) -> dict[str, Any]:
+def decide_auto_pass(
+    scores: dict[str, Any],
+    threshold: float = AUTO_PASS_THRESHOLD,
+    scoring_mode: str = "result_json",
+) -> dict[str, Any]:
     text_score = float(scores["text_quality"].get("score", 0.0))
     pattern_score = float(scores["pattern"].get("score", 0.0))
     table_score = float(scores["table"].get("score", 0.0))
-    has_table_signal = scores["table"].get("detected_count", 0) > 0
+    has_table_signal = scoring_mode == "result_json" and scores["table"].get("detected_count", 0) > 0
     weights = (0.50, 0.35, 0.15) if has_table_signal else (0.62, 0.38, 0.0)
     overall_score = text_score * weights[0] + pattern_score * weights[1] + table_score * weights[2]
 
@@ -223,8 +227,10 @@ def decide_auto_pass(scores: dict[str, Any], threshold: float = AUTO_PASS_THRESH
         reasons.append("overall_score below threshold")
     if float(scores["text_quality"].get("garbage_ratio", 1.0)) > 0.10:
         reasons.append("garbage_ratio above 0.10")
-    if scores["pattern"].get("warnings"):
-        reasons.extend(scores["pattern"]["warnings"])
+    for warning in scores["pattern"].get("warnings", []):
+        if _is_soft_pattern_warning(warning, scores["pattern"]):
+            continue
+        reasons.append(warning)
     if scores["table"].get("warnings"):
         reasons.extend(scores["table"]["warnings"])
     if scores.get("reference_metrics"):
@@ -238,6 +244,12 @@ def decide_auto_pass(scores: dict[str, Any], threshold: float = AUTO_PASS_THRESH
         "auto_pass": not reasons,
         "overall_score": round(_clamp(overall_score), 4),
         "threshold": threshold,
+        "scoring_mode": scoring_mode,
+        "weights": {
+            "text_quality": weights[0],
+            "pattern": weights[1],
+            "table": weights[2],
+        },
         "reasons": _unique_strings(reasons),
     }
 
@@ -251,11 +263,69 @@ def run_quality_gate(
     result_path = Path(result_json_path)
     output_path = Path(output_dir)
     text = collect_best_ocr_text(result_path)
+    table_score = calculate_table_score(result_path)
+
+    report = {
+        "input_type": "result_json",
+        "scoring_mode": "result_json",
+        "input": str(result_path),
+        "source_text_path": None,
+        "ground_truth": str(ground_truth_path) if ground_truth_path else None,
+    }
+    return _run_quality_gate_for_text(
+        text=text,
+        output_path=output_path,
+        base_report=report,
+        table_score=table_score,
+        ground_truth_path=ground_truth_path,
+        threshold=threshold,
+    )
+
+
+def run_quality_gate_for_text(
+    text_path: str | Path,
+    output_dir: str | Path,
+    ground_truth_path: str | Path | None = None,
+    threshold: float = AUTO_PASS_THRESHOLD,
+) -> QualityGateResult:
+    source_path = Path(text_path)
+    raw_text = source_path.read_text(encoding="utf-8", errors="replace")
+    normalized = normalize_text(raw_text)
+    text = "\n".join(remove_duplicate_lines(normalized.splitlines())).strip()
+    table_score = {
+        "score": 0.0,
+        "available": False,
+        "reason": "No table structure available for raw text input",
+        "warnings": [],
+    }
+    report = {
+        "input_type": "raw_text",
+        "scoring_mode": "raw_text",
+        "input": str(source_path),
+        "source_text_path": str(source_path),
+        "ground_truth": str(ground_truth_path) if ground_truth_path else None,
+    }
+    return _run_quality_gate_for_text(
+        text=text,
+        output_path=Path(output_dir),
+        base_report=report,
+        table_score=table_score,
+        ground_truth_path=ground_truth_path,
+        threshold=threshold,
+    )
+
+
+def _run_quality_gate_for_text(
+    text: str,
+    output_path: Path,
+    base_report: dict[str, Any],
+    table_score: dict[str, Any],
+    ground_truth_path: str | Path | None,
+    threshold: float,
+) -> QualityGateResult:
     patterns = extract_quality_patterns(text)
     text_quality = calculate_text_quality_score(text)
     pattern_score = calculate_pattern_score(patterns, text)
-    table_score = calculate_table_score(result_path)
-
     scores: dict[str, Any] = {
         "text_quality": text_quality,
         "pattern": pattern_score,
@@ -265,17 +335,18 @@ def run_quality_gate(
         gt_text = Path(ground_truth_path).read_text(encoding="utf-8", errors="replace")
         scores["reference_metrics"] = calculate_reference_metrics(text, gt_text)
 
-    decision = decide_auto_pass(scores, threshold=threshold)
+    scoring_mode = str(base_report.get("scoring_mode") or base_report.get("input_type") or "result_json")
+    decision = decide_auto_pass(scores, threshold=threshold, scoring_mode=scoring_mode)
     verified_text = text + "\n" if decision["auto_pass"] else ""
     review_text = "" if decision["auto_pass"] else text + "\n"
-
     report = {
-        "input": str(result_path),
-        "ground_truth": str(ground_truth_path) if ground_truth_path else None,
+        **base_report,
         "doc_type": pattern_score["doc_type"],
         "auto_pass": decision["auto_pass"],
         "threshold": threshold,
         "overall_score": decision["overall_score"],
+        "scoring_mode": decision["scoring_mode"],
+        "scoring_weights": decision["weights"],
         "scores": scores,
         "patterns": patterns,
         "outputs": {
@@ -466,20 +537,41 @@ def _looks_like_nutrition_date_confusion(patterns: dict[str, list[str]]) -> bool
 
 def _find_suspicious_urls(text: str, valid_urls: list[str]) -> list[str]:
     candidates = re.findall(r"\b(?:www|http|bit|w{2,}|[A-Za-z0-9.-]+)\S{0,40}\b", text, flags=re.IGNORECASE)
-    valid = set(valid_urls)
+    valid = {_normalize_url_for_compare(value) for value in valid_urls}
     return _unique_strings(
         [
             value
             for value in candidates
-            if value not in valid and re.search(r"www|http|bit\.?|\.com|\.kr", value, flags=re.IGNORECASE)
+            if _normalize_url_for_compare(value) not in valid
+            and re.search(r"www|http|bit\.?|\.com|\.kr", value, flags=re.IGNORECASE)
         ]
     )
 
 
 def _find_suspicious_phones(text: str, valid_phones: list[str]) -> list[str]:
     candidates = re.findall(r"\b0\d[\d\s.-]{6,14}\d\b", text)
-    valid = set(valid_phones)
-    return _unique_strings([value for value in candidates if value not in valid])
+    valid = {_normalize_phone_for_compare(value) for value in valid_phones}
+    return _unique_strings([value for value in candidates if _normalize_phone_for_compare(value) not in valid])
+
+
+def _is_soft_pattern_warning(warning: str, pattern_score: dict[str, Any]) -> bool:
+    found = pattern_score.get("found", {})
+    if warning == "Suspicious broken URL candidates detected." and found.get("urls", 0) > 0:
+        return True
+    if warning == "Suspicious broken phone number candidates detected." and found.get("phones", 0) > 0:
+        return True
+    return False
+
+
+def _normalize_url_for_compare(value: str) -> str:
+    normalized = value.strip().lower()
+    normalized = re.sub(r"^https?://", "", normalized)
+    normalized = normalized.rstrip(".,;:)]}")
+    return normalized
+
+
+def _normalize_phone_for_compare(value: str) -> str:
+    return re.sub(r"\D", "", value)
 
 
 def _levenshtein(a: str, b: str) -> int:

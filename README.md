@@ -503,6 +503,74 @@ python tools\eval_ocr.py `
   --ocr-result outputs\ocr_experiment\sample01\ocr_results\warped.txt
 ```
 
+## OCR Quality Gate
+
+사진 OCR 결과를 바로 후속 모델에 넘기지 않고, 품질 기준을 통과할 수 있는지 평가하는 로컬 실험 도구입니다.
+
+최종 목표는 사용자 확인 없이 자동 처리 가능한 OCR 품질을 확보하는 것입니다. 목표 지표는 F1 `0.90` 이상, CER `0.10` 이하, 핵심 패턴(URL/전화번호/날짜/시간/금액) 누락 최소화입니다.
+
+현재 단계에서는 모든 OCR 결과를 자동 통과시키지 않습니다. `overall_score >= 0.90`, garbage ratio `0.10` 이하, 핵심 패턴 누락/깨진 URL/전화번호 의심 없음 같은 조건을 만족한 경우에만 `verified_text.txt`를 생성하고, 기준 미달이면 `review_text.txt`로 fallback합니다.
+
+이 기능은 태수님 HWP/PDF/text `clean_text(str)` 경로를 대체하지 않습니다. 사진/image 입력 경로에서 OCR `result.json`이 충분히 신뢰 가능한지 판단하는 실험 도구입니다. FastAPI, Android, NLLB, TTS와 연결하지 않으며, OCR 결과를 학습 데이터나 번역 입력으로 바로 넘기지 않습니다.
+
+실행 예시:
+
+```powershell
+python tools\run_quality_gate.py --result-json outputs\ocr_experiment\sample01\result.json --output outputs\ocr_experiment\sample01\quality_gate
+```
+
+사람이 만든 기준 텍스트가 있을 때는 CER/F1도 함께 계산할 수 있습니다.
+
+```powershell
+python tools\run_quality_gate.py --result-json outputs\ocr_experiment\sample01\result.json --ground-truth data\reference\sample01_gt.txt --output outputs\ocr_experiment\sample01\quality_gate
+```
+
+출력 파일:
+
+```text
+verified_text.txt
+review_text.txt
+key_patterns.json
+quality_report.json
+```
+
+`quality_report.json`에는 `text_quality`, `pattern`, `table` 점수와 `auto_pass=false`가 된 이유가 기록됩니다. 현재 auto_pass 기준은 `0.90`이며, 기준을 통과하지 못한 경우에는 `review_text.txt`를 사람이 확인해야 합니다.
+
+## Model Input Builder
+
+PDF 변환 결과나 OCR 결과를 후속 모델 입력 전 검토용 텍스트로 정제하는 로컬 보조 도구입니다.
+
+SchoolBridge의 실제 주 대상은 가정통신문/학교 안내문입니다. 급식표는 표가 많은 문서에서 OCR/PDF 텍스트 정제 로직을 검증하기 위한 테스트 샘플입니다.
+
+태수님 파트는 HWP/PDF/text를 `clean_text(str)`로 변환하는 단계까지 담당합니다. 이 기능은 태수님 텍스트 변환 로직을 대체하지 않습니다.
+
+사진/image 입력 경로에서는 OCR `result.json`을 받아 정제 후보 텍스트와 `key_patterns.json`을 만드는 보조 도구입니다. 자동 통과 여부와 `verified_text.txt` 생성은 위의 OCR Quality Gate에서 판단합니다.
+
+이 기능은 OCR/PDF 변환 결과를 정답으로 확정하지 않고, 윤정님 할일 추출 모델에 넣기 전 검토 후보를 만드는 실험 도구입니다. FastAPI, Android, NLLB, TTS와 연결하지 않습니다.
+
+텍스트 파일 입력:
+
+```powershell
+python tools\build_model_input.py --text "OCR\2026학년도 5월 학교급식 가정통신문.txt" --output outputs\model_input\meal_pdf
+```
+
+OCR `result.json` 입력:
+
+```powershell
+python tools\build_model_input.py --result-json outputs\ocr_experiment\meal_table_sample01\result.json --output outputs\ocr_experiment\meal_table_sample01\model_input
+```
+
+출력 파일:
+
+```text
+review_text.txt
+model_input_text.txt
+key_patterns.json
+normalization_report.json
+```
+
+`review_text.txt`와 `model_input_text.txt`는 자동 생성된 정제 후보입니다. `verified_text.txt`로 자동 승격할지는 OCR Quality Gate의 `auto_pass` 결과를 확인해야 합니다.
+
 ## 이번 단계에서 하지 않는 것
 
 - PDF 처리 고도화

@@ -1,0 +1,46 @@
+# Local environments
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Experiment outputs
+# Use outputs/* (not outputs/) so !outputs/.gitkeep exception can work
+outputs/*
+!outputs/.gitkeep
+outputs/**/debug_images/
+outputs/**/ocr_results/
+outputs/**/table_crops/
+outputs/**/table_cell_crops/
+outputs/**/result.json
+
+# Large or private sample files
+data/samples/*.pdf
+data/samples/*.jpg
+data/samples/*.jpeg
+data/samples/*.png
+!data/samples/.gitkeep
+data/reference/*.txt
+!data/reference/.gitkeep
+
+# Local OCR engine / binary installations
+tesseract/
+Tesseract-OCR/
+poppler/
+tessdata/
+
+# OCR handoff artifacts
+OCR/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

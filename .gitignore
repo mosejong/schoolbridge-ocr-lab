@@ -31,6 +31,9 @@ data/reference/*.txt
 
 # Android OCR raw text samples
 data/android_ocr/*.txt
+data/android_ocr/*.jpg
+data/android_ocr/*.jpeg
+data/android_ocr/*.png
 !data/android_ocr/.gitkeep
 
 # Local OCR engine / binary installations

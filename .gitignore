@@ -44,6 +44,8 @@ tessdata/
 
 # OCR handoff artifacts
 OCR/
+OCR실험/
+가통문 샘플/
 
 # OS / editor
 .DS_Store

@@ -114,6 +114,19 @@ OCR 결과
 | 4 | 추출 모델 결과와 bbox 재매핑 | 할 일/비용/일정 영역 시각화 |
 | 5 | 앱에서 원본 문서 위 하이라이트 표시 | ChatGPT 단순 요약과 차별화 |
 
+### 디지털 PDF bbox PoC
+
+텍스트가 살아 있는 PDF는 OCR을 돌리지 않고 `pdfplumber` 좌표를 우선 사용합니다.
+
+```powershell
+python tools\pdf_bbox_probe.py `
+  --input data\samples\sample_notice.pdf `
+  --output outputs\pdf_bbox\sample_notice.json
+```
+
+출력 JSON은 page, text, bbox(x/y/width/height), source를 포함하며,
+태수님 backend/Android overlay 하이라이트 작업에 넘기는 최소 스키마로 사용합니다.
+
 ---
 
 ## 팀 파이프라인에서의 위치
